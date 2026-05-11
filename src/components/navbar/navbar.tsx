@@ -58,7 +58,10 @@ const SearchIcon = ({ size = 24, strokeWidth = 1.5, ...props }) => {
 const Component: React.FC<Props> = ({ children, className }) => {
   const { metadata, token } = useData()
   const [value, setValue] = useState('')
-  const [type, setType] = useState<string[]>(['sub_block'])
+  /** 与 typeOptions 同步初始化，避免 metadata 未就绪时 selectedKeys 不在 collection 内 */
+  const [type, setType] = useState<string[]>([])
+  const networkNode = metadata?.networkNode || 'default'
+  const [logoSrc, setLogoSrc] = useState(`/images/network/${networkNode}/logo.png`)
   const router = useRouter()
 
   const showSubstrate = metadata?.enable_substrate
@@ -164,10 +167,20 @@ const Component: React.FC<Props> = ({ children, className }) => {
     }
   }
   useEffect(() => {
+    setLogoSrc(`/images/network/${networkNode}/logo.png`)
+  }, [networkNode])
+
+  useEffect(() => {
+    if (!typeOptions.length) return
+    const current = type[0]
+    const inCollection = typeOptions.some((o) => o.value === current)
+    if (inCollection) return
     if (metadata?.enable_evm && !metadata?.enable_substrate) {
       setType(['pvm_block'])
+    } else {
+      setType([typeOptions[0].value])
     }
-  }, [metadata?.enable_evm, metadata?.enable_substrate])
+  }, [typeOptions, type, metadata?.enable_evm, metadata?.enable_substrate])
 
   const bannerBackgroundImage = useMemo(() => {
     if (metadata?.networkNode) {
@@ -379,8 +392,9 @@ const Component: React.FC<Props> = ({ children, className }) => {
                 height={0}
                 sizes="100vw"
                 className="hidden md:block h-[30px] w-auto"
-                src={`/images/network/${metadata?.networkNode || 'default'}/logo.png`}
+                src={logoSrc}
                 alt={metadata?.networkNode || 'Network Name'}
+                onError={() => setLogoSrc('/images/network/default/logo.png')}
               />
             </div>
           </NavbarItem>
@@ -411,8 +425,9 @@ const Component: React.FC<Props> = ({ children, className }) => {
                     popoverContent: 'w-[190px]',
                     selectorIcon: 'right-[0px]',
                   }}
-                  label=""
+                  aria-label="Search category"
                   selectedKeys={type}
+                  isDisabled={!typeOptions.length}
                   onSelectionChange={(key) => {
                     if (key.currentKey) {
                       setType([key.currentKey])

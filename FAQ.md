@@ -32,13 +32,17 @@ PORT=3000 node .next/standalone/server.js
 
 ### A.3 standalone 静态资源同步（避免图片报错）
 
-构建后建议执行：
+Next.js 的 `standalone` 输出**不会自动带上**仓库里的 `public/` 与 `.next/static`，不拷贝则 `/images/...` 在运行时会变成「无效图片 / received null」。
+
+构建后建议执行（与官方文档一致）：
 
 ```bash
 cp -r public .next/standalone/
 mkdir -p .next/standalone/.next
 cp -r .next/static .next/standalone/.next/
 ```
+
+当前项目在 `package.json` 中配置了 **`postbuild`**：每次成功的 `npm run build` 后会自动执行上述拷贝，一般无需再手敲命令；若你跳过 `npm run build`、只复制了旧的 `.next/standalone`，仍需自行保证其中存在 `public` 与 `.next/static`。
 
 否则可能出现：
 
@@ -234,6 +238,32 @@ ls -l public/images/network/default/logo.png
 curl -I http://127.0.0.1:3000/images/logo.png
 ```
 
+若日志指向具体网络目录（接口返回的 `networkNode`），请核对该目录是否存在：
+
+```bash
+# 将 bifrost-kusama 换成 metadata 中的 networkNode
+ls -l public/images/network/bifrost-kusama/logo.png
+curl -I http://127.0.0.1:3000/images/network/bifrost-kusama/logo.png
+```
+
+### 网络 logo / banner 路径不存在
+
+**现象示例**：`The requested resource isn't a valid image for /images/network/bifrost-kusama/logo.png received null`。
+
+**原因**：顶栏 Logo 与背景横幅使用 `public/images/network/<networkNode>/` 下的 `logo.png`、`banner.png`。若后端返回的 `networkNode` 在仓库中尚未建对应目录，Next.js 图片优化会请求失败并打印上述日志。
+
+**可选处理方式**：
+
+1. **按规范补资源（推荐长期做法）**：在 `public/images/network/<networkNode>/` 放置 `logo.png` 与 `banner.png`，规格见项目 `README.md` 中网络图片说明。
+2. **临时复用已有网络素材**：在 `public/images/network/` 下对已有目录做符号链接，例如与 `bifrost-testnet` 共用一套图（按需替换为正式素材）：
+
+```bash
+cd public/images/network
+ln -snf bifrost-testnet bifrost-kusama
+```
+
+3. **前端容错**：顶栏 `Image` 在加载失败时会回退到 `public/images/network/default/logo.png`，避免页面长期报错；横幅仍依赖存在文件或上述目录/链接，否则仅背景可能缺失。
+
 ### 处理建议（standalone）
 
 构建后同步静态资源，再启动：
@@ -258,9 +288,19 @@ PORT=3000 node .next/standalone/server.js
 
 通常不阻塞服务启动与页面访问，属于 UI 组件配置/可访问性警告。
 
-### 建议
+### 原因说明
 
-后续在前端代码中修正 Select 默认值与无障碍属性配置。
+1. **`sub_block` 与 collection 不一致**：`metadata` 尚未返回时，搜索类型下拉的选项列表 `typeOptions` 为空，但若此时仍将 `selectedKeys` 设为 `['sub_block']`，HeroUI `Select` 中没有任何 `SelectItem` 却携带选中键，即会触发该警告。
+2. **`aria-label`**：搜索框旁的下拉使用了空字符串 `label=""`，等同于无可见标签，HeroUI 会要求提供 `aria-label` 或 `aria-labelledby`。
+
+### 项目内已做修改（导航栏搜索）
+
+在 `src/components/navbar/navbar.tsx` 中已调整：
+
+- 搜索类型 `type` 初始为空数组；在 `typeOptions` 有数据后，用 `useEffect` 校验当前选中值是否在选项内，不在则设为「仅 EVM 时的 `pvm_block`」或「当前列表第一项」；并在选项未加载时对 `Select` 使用 `isDisabled`。
+- 去掉空 `label`，为 `Select` 设置 `aria-label="Search category"`。
+
+升级或合并代码后若仍出现同类提示，可检查其他页面是否仍有 `label=""` 且无 `aria-label` 的 `Select`/`Input`（例如 `src/components/contract/verify.tsx`），按同样原则补全无障碍属性即可。
 
 ## 10) MySQL / Redis 不希望暴露外网
 
