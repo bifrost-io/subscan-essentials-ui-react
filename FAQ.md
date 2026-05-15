@@ -7,7 +7,7 @@
 
 ## A) 前端部署与管理（速查）
 
-本节是前端上线/运维的集中说明；**新机器从零部署**见 **A.0**；更细分的报错说明见后文第 4、6、7、8、9 条。
+本节是前端上线/运维的集中说明；**新机器从零部署**见 **A.0**；**域名与 Nginx 反代**见 **A.6**；更细分的报错说明见后文第 4、6、7、8、9 条。
 
 ### A.0 新机器 clone 后首次部署（清单）
 
@@ -57,7 +57,7 @@
    ls .next/standalone/.next/static/chunks | head
    ```
 
-   应能看到大量带 hash 的 `.js` 文件；若该路径不存在或为空，请重新执行 **`npm run build`**（或按 **A.3** 手动执行两条 `cp`）后再启动。
+   应能看到大量带 hash 的 `.js` 文件；若该路径不存在或为空，请重新执行 **`npm run build`**（或按 **A.3** 手动执行两条 `cp`）后再启动。同理，**`/images/...` 静态图**依赖 **`.next/standalone/public/`**（见 **A.3**），不要只核对仓库根的 `public/`。
 
 5. **启动（必须在项目根目录执行）**
 
@@ -69,7 +69,7 @@
 
 6. **可选：生产环境常驻**
 
-   使用 **systemd**、**pm2**、**Docker** 或负载均衡反代等，将上述命令托管为服务；对外若经 Nginx 反代，注意 WebSocket/超时与 `Host` 头按需配置。
+   使用 **systemd**、**pm2**、**Docker** 或负载均衡反代等，将上述命令托管为服务；对外若经 **Nginx** 配域名与 HTTPS，见 **A.6**；反代时注意超时与 `Host` / `X-Forwarded-*` 头按需配置。
 
 7. **验收**
 
@@ -78,6 +78,7 @@
 8. **仅前端相关补充**
 
    - 若后端返回的 `networkNode` 在仓库中尚无 `public/images/network/<networkNode>/`，需按 `README.md` 补 logo/banner，或临时用符号链接复用已有网络目录，见后文第 **8** 条。
+   - 使用 **standalone** 时，进程读取的是 **`.next/standalone/public/`**，不是仓库根的 `public/`。排查「图在仓库里但页面/curl 仍 404」时，**必须同时检查** `.next/standalone/public/...` 是否存在（见 **A.3**、第 **8** 条）。
    - 若从其他环境**只拷贝** `.next/standalone` 目录到新机器，须同时保证其中包含 **`public`** 与 **`.next/static`**，或在新机器上重新 `npm run build`。
 
 ### A.1 环境变量配置（最关键）
@@ -115,6 +116,15 @@ cp -r .next/static .next/standalone/.next/
 
 当前项目在 `package.json` 的 **`build` 脚本末尾**串联了上述拷贝（`next build && npm run copy-standalone-assets`），一般无需再手敲命令。若流水线或文档里仍写 **`next build`** 且未接拷贝步骤，须改为 **`npm run build`**，或在本机按上文两条 `cp` 补拷。若你跳过完整构建、只复制了旧的 `.next/standalone`，仍需自行保证其中存在 `public` 与 `.next/static`。
 
+构建完成后建议自检 **`public` 是否已进入 standalone**（与线上 `curl /images/...` 一致；仅检查仓库根的 `public` 容易漏判）：
+
+```bash
+ls -la .next/standalone/public/images/logo.png
+ls -la .next/standalone/public/images/network/default/logo.png
+```
+
+若上述路径不存在，而仓库根 `public/` 里却有文件，说明拷贝未执行或产物过旧，请重新 **`npm run build`** 或手动执行本节两条 `cp` 后**重启** `server.js`。
+
 否则可能出现：
 
 ```text
@@ -138,9 +148,100 @@ curl -s -X POST "http://<后端IP>:4399/api/scan/metadata" \
 
 ### A.5 快速验收
 
-- 浏览器访问前端地址后，Network 中 `metadata`、`token` 等接口应指向 `<后端IP>:4399`；
+- 浏览器访问前端地址后，Network 中 `metadata`、`token` 等接口应指向你配置的 **`NEXT_PUBLIC_API_HOST`**（内网调试时常为 `<后端IP>:4399`，上域名后见 **A.6**）；
 - 接口返回应为 `code: 0`；
 - 首页区块/交易数据应持续更新。
+
+### A.6 域名与 Nginx（前后端分域名建议）
+
+目标：浏览器只访问 **HTTPS 域名**；本机仍跑 **Next standalone（如 3000）** 与 **subscan API（如 4399）**，由 Nginx 终止 TLS 并反代。
+
+#### 推荐结构
+
+| 角色 | 示例域名 | 反代到 |
+|------|----------|--------|
+| 前端页面 | `https://scan.example.com` | `http://127.0.0.1:3000` |
+| 后端 API | `https://api.example.com` | `http://127.0.0.1:4399` |
+
+- **前端环境变量**：构建前在 `.env.production`（或 CI 变量）中把 API 写成**对外公网可访问的 API 域名**（与页面是否同域无关，浏览器会直连该地址发请求）：
+
+  ```env
+  NEXT_PUBLIC_API_HOST=https://api.example.com
+  ```
+
+  **不要**在 `NEXT_PUBLIC_API_HOST` 里写 `127.0.0.1`（见后文第 **4** 条）。变量修改后需重新 **`npm run build`** 并部署/重启前端。
+
+- **CORS**：若前端域名为 `scan.example.com`、接口域名为 `api.example.com`，需保证 **subscan-api** 对浏览器来源放行 CORS（按后端实际配置调整）。若暂时无法改后端，可评估「同域路径反代 API」方案（例如由 Nginx 在 `scan.example.com` 上提供 `/api/` 反代到 4399，并把 `NEXT_PUBLIC_API_HOST` 设为 `https://scan.example.com`），前提是路径与后端路由一致且无冲突。
+
+- **证书**：生产环境建议使用 **Let’s Encrypt**（`certbot --nginx`）或你们已有证书，在 `server { listen 443 ssl; ... }` 中配置 `ssl_certificate` / `ssl_certificate_key`。
+
+#### Nginx 配置示例（按需改域名与端口）
+
+以下为**最小可用**片段，实际部署请合并进站点配置、按需加 `access_log`、`client_max_body_size`、限流等。
+
+**1）前端（Next standalone）**
+
+```nginx
+upstream next_standalone {
+    server 127.0.0.1:3000;
+    keepalive 32;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name scan.example.com;
+
+    # ssl_certificate /path/fullchain.pem;
+    # ssl_certificate_key /path/privkey.pem;
+
+    location / {
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout  300s;
+        proxy_send_timeout  300s;
+        proxy_pass http://next_standalone;
+    }
+}
+```
+
+说明：`X-Forwarded-Proto` 便于应用识别原始协议为 HTTPS。若需 **WebSocket**，在 **`http { }` 顶层**（与 `server` 同级）增加 `map $http_upgrade $connection_upgrade { default upgrade; '' close; }`，并在本 `location` 中增加 `proxy_set_header Upgrade $http_upgrade;` 与 `proxy_set_header Connection $connection_upgrade;`（见 Nginx 官方反代 WebSocket 示例）。
+
+**2）后端（subscan API）**
+
+```nginx
+upstream subscan_api {
+    server 127.0.0.1:4399;
+    keepalive 16;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name api.example.com;
+
+    # ssl_certificate ...
+    # ssl_certificate_key ...
+
+    location / {
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout  300s;
+        proxy_send_timeout  300s;
+        proxy_pass http://subscan_api;
+    }
+}
+```
+
+**3）安全与运维建议**
+
+- **只监听本机**：`docker-compose` 或 API 进程尽量让 **4399 仅绑定 `127.0.0.1`**，由 Nginx 对外提供 443，减少端口直接暴露。
+- **HTTP 跳转 HTTPS**：为 `scan.example.com` / `api.example.com` 各写一个 `listen 80` 的 `server`，`return 301 https://$host$request_uri;`。
+- **健康检查**：`curl -sI https://scan.example.com/` 与 `curl -s -X POST https://api.example.com/api/scan/metadata -H 'Content-Type: application/json' -d '{}'` 应返回预期状态与 `code: 0`（参见后文第 **5** 条）。
 
 ## 1) `docker compose` 提示 `version is obsolete`
 
@@ -217,9 +318,7 @@ http://127.0.0.1:4399/api/scan/metadata
 NEXT_PUBLIC_API_HOST=http://37.59.100.71:4399
 ```
 
-修改后需重新 `build` 并重启前端服务。
-
-## 5) `curl -I /api/scan/metadata` 返回 404
+修改后需重新 `build` 并重启前端服务。若经 **Nginx + HTTPS 域名** 暴露 API，应写 `https://api.example.com` 等形式，见 **A.6**。
 
 ### 现象
 
@@ -298,23 +397,37 @@ The requested resource isn't a valid image for /images/logo.png received null
 
 ### 常见原因
 
-- 图片资源路径文件不存在；
-- 使用 standalone 启动时，静态资源未正确带到运行目录。
+- 图片资源路径文件不存在，或符号链接目标目录/文件缺失；
+- 使用 standalone 启动时，**运行目录** `.next/standalone/public/` 未同步仓库的 `public/`（与仓库根 `public` 是否齐全不是同一回事）。
 
 ### 快速排查
 
+**若使用 standalone（`node .next/standalone/server.js`）**：浏览器与 `curl` 访问的 `/images/...` 来自 **`.next/standalone/public`**。仅检查仓库根的 `public/` 正常，仍可能出现整页 **HTML 404** 或「invalid image / received null」——须对照 standalone 下路径。
+
 ```bash
+# 仓库根（确认源码/构建前资源是否存在）
 ls -l public/images/logo.png
 ls -l public/images/network/default/logo.png
-curl -I http://127.0.0.1:3000/images/logo.png
+
+# standalone（与进程实际一致；此处缺失则 curl 常为 HTML 404）
+ls -la .next/standalone/public/images/logo.png
+ls -la .next/standalone/public/images/network/default/logo.png
 ```
 
-若日志指向具体网络目录（接口返回的 `networkNode`），请核对该目录是否存在：
+HTTP 自检建议用 **响应头**（成功时为图片 `Content-Type`，失败时常为 `text/html`）：
+
+```bash
+curl -sI http://127.0.0.1:3000/images/logo.png
+```
+
+若日志指向具体网络目录（接口返回的 `networkNode`），请核对 **两处** `public`（仓库根与 standalone）及 symlink 是否解析到真实文件：
 
 ```bash
 # 将 bifrost-kusama 换成 metadata 中的 networkNode
-ls -l public/images/network/bifrost-kusama/logo.png
-curl -I http://127.0.0.1:3000/images/network/bifrost-kusama/logo.png
+ls -la public/images/network/bifrost-kusama/logo.png
+readlink -f public/images/network/bifrost-kusama/logo.png
+ls -la .next/standalone/public/images/network/bifrost-kusama/logo.png
+curl -sI http://127.0.0.1:3000/images/network/bifrost-kusama/logo.png
 ```
 
 ### 网络 logo / banner 路径不存在
@@ -322,6 +435,8 @@ curl -I http://127.0.0.1:3000/images/network/bifrost-kusama/logo.png
 **现象示例**：`The requested resource isn't a valid image for /images/network/bifrost-kusama/logo.png received null`。
 
 **原因**：顶栏 Logo 与背景横幅使用 `public/images/network/<networkNode>/` 下的 `logo.png`、`banner.png`。若后端返回的 `networkNode` 在仓库中尚未建对应目录，Next.js 图片优化会请求失败并打印上述日志。
+
+**常见误区**：已在仓库 **`public/images/network/`** 下建好目录或 **symlink**，且 `ls public/...` 正常，但未执行 **`npm run build`**（或未将 `public` 拷入 **`.next/standalone`**），则 **`.next/standalone/public/images/network/...` 可能仍不存在**，`curl` 返回 **HTML 404 页面** 而非图片。处理：见 **A.3**（重新 `npm run build` 或手动 `cp -r public .next/standalone/`）后**重启** `server.js`。
 
 **可选处理方式**：
 

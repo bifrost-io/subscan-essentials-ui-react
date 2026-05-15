@@ -1,1 +1,1 @@
-window.__ENV = {"NEXT_PUBLIC_API_HOST":"http://37.59.100.71:4399"};
+window.__ENV = {"NEXT_PUBLIC_API_HOST":"https://bifrost-kusama-subscan.bifrost.io"};

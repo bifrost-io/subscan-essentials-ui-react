@@ -24,8 +24,23 @@ const postFetcher = ([url, data]: [string, any]) => {
     return axiosInstance.post(API_HOST + url, data).then((res) => res.data)
 }
 
+/** 与 DataProvider 等传入的 host 对齐；勿在 host 为空时回退到 const 的 API_HOST（该值在构建时写死，会导致 HTTPS 页仍请求旧 http 地址）。 */
+function resolveApiBase(host: string): string {
+    if (host) return host
+    if (typeof window !== 'undefined') {
+        const fromEnv = (window as unknown as { __ENV?: { NEXT_PUBLIC_API_HOST?: string } }).__ENV
+            ?.NEXT_PUBLIC_API_HOST
+        if (fromEnv) return fromEnv
+    }
+    return process.env.NEXT_PUBLIC_API_HOST || ''
+}
+
 const runtimeFetcher = ([host, url, data]: [string, string, any]) => {
-    return axiosInstance.post((host || API_HOST) + url, data).then((res) => res.data)
+    const base = resolveApiBase(host)
+    if (!base) {
+        return Promise.reject(new Error('NEXT_PUBLIC_API_HOST is empty; check public/__ENV.js and rebuild.'))
+    }
+    return axiosInstance.post(base + url, data).then((res) => res.data)
 }
 
 // const postFetcher = ([url, data]: [string, any]) => {
