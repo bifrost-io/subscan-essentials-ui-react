@@ -7,7 +7,78 @@
 
 ## A) 前端部署与管理（速查）
 
-本节是前端上线/运维的集中说明；更细分的报错说明见后文第 4、6、7、8、9 条。
+本节是前端上线/运维的集中说明；**新机器从零部署**见 **A.0**；更细分的报错说明见后文第 4、6、7、8、9 条。
+
+### A.0 新机器 clone 后首次部署（清单）
+
+以下假设本机已安装 **Node.js 18+**（与 Next.js 14 常见要求一致）及 **npm**，且 **后端 subscan API 已可访问**（例如 `http://<后端IP>:4399`）。
+
+1. **获取代码**
+
+   ```bash
+   git clone <仓库地址> subscan-essentials-ui-react
+   cd subscan-essentials-ui-react
+   ```
+
+2. **配置 API 地址（必做）**
+
+   前后端不在同一台机器时，`NEXT_PUBLIC_API_HOST` 必须写后端真实可达地址，**不能**写 `127.0.0.1`（浏览器里会指向用户本机）。
+
+   任选其一方式写入变量后，**必须重新执行构建**才会打进前端产物：
+
+   - 在项目根创建 `.env.production`（或按你们规范使用 CI 环境变量），例如：
+
+     ```env
+     NEXT_PUBLIC_API_HOST=http://<后端IP>:4399
+     ```
+
+   - 若临时本机试跑且后端就在本机，可写 `http://127.0.0.1:4399`（仅当浏览器与后端同机访问时成立）。
+
+3. **安装依赖与图片优化（standalone 推荐）**
+
+   ```bash
+   npm install
+   npm i sharp
+   ```
+
+   `sharp` 用于 standalone 下 Next.js 图片优化；缺失时可能启动报错或优化失败，见后文第 7 条。
+
+4. **构建**
+
+   ```bash
+   npm run build
+   ```
+
+   构建成功后，`package.json` 里的 **`build` 脚本会在 `next build` 之后紧接着执行 `copy-standalone-assets`**，将 `public/` 与 `.next/static/` 同步到 `.next/standalone/`（拷贝写在 `build` 主流程里，避免仅依赖 `postbuild` 时被 CI 的 `npm run build --ignore-scripts` 等配置跳过）。若构建失败，不要直接启动 standalone。
+
+   **同步过去的 `.next/static` 同样负责浏览器端的 `/_next/static/...`（含 `chunks/webpack-*.js` 等）**。若 standalone 里仍缺少 `.next/standalone/.next/static/`（例如流水线里只跑了 **`next build`** 而不是 **`npm run build`**、或部署时未带上该目录），页面会出现 **`net::ERR_ABORTED` / `404` 加载 JS chunk** 之类报错，与 `server/chunks`（服务端打包）不是同一套文件。构建完成后可在**项目根目录**自检：
+
+   ```bash
+   ls .next/standalone/.next/static/chunks | head
+   ```
+
+   应能看到大量带 hash 的 `.js` 文件；若该路径不存在或为空，请重新执行 **`npm run build`**（或按 **A.3** 手动执行两条 `cp`）后再启动。
+
+5. **启动（必须在项目根目录执行）**
+
+   ```bash
+   PORT=3000 node .next/standalone/server.js
+   ```
+
+   说明：本项目使用 `output: 'standalone'`，**不要用** `npm start` / `next start` 作为线上方式（除非你们另行改配置）。
+
+6. **可选：生产环境常驻**
+
+   使用 **systemd**、**pm2**、**Docker** 或负载均衡反代等，将上述命令托管为服务；对外若经 Nginx 反代，注意 WebSocket/超时与 `Host` 头按需配置。
+
+7. **验收**
+
+   浏览器打开前端地址，确认接口请求指向配置的后端，且 `metadata` 等返回正常（见 **A.5**）。
+
+8. **仅前端相关补充**
+
+   - 若后端返回的 `networkNode` 在仓库中尚无 `public/images/network/<networkNode>/`，需按 `README.md` 补 logo/banner，或临时用符号链接复用已有网络目录，见后文第 **8** 条。
+   - 若从其他环境**只拷贝** `.next/standalone` 目录到新机器，须同时保证其中包含 **`public`** 与 **`.next/static`**，或在新机器上重新 `npm run build`。
 
 ### A.1 环境变量配置（最关键）
 
@@ -42,7 +113,7 @@ mkdir -p .next/standalone/.next
 cp -r .next/static .next/standalone/.next/
 ```
 
-当前项目在 `package.json` 中配置了 **`postbuild`**：每次成功的 `npm run build` 后会自动执行上述拷贝，一般无需再手敲命令；若你跳过 `npm run build`、只复制了旧的 `.next/standalone`，仍需自行保证其中存在 `public` 与 `.next/static`。
+当前项目在 `package.json` 的 **`build` 脚本末尾**串联了上述拷贝（`next build && npm run copy-standalone-assets`），一般无需再手敲命令。若流水线或文档里仍写 **`next build`** 且未接拷贝步骤，须改为 **`npm run build`**，或在本机按上文两条 `cp` 补拷。若你跳过完整构建、只复制了旧的 `.next/standalone`，仍需自行保证其中存在 `public` 与 `.next/static`。
 
 否则可能出现：
 
@@ -290,17 +361,28 @@ PORT=3000 node .next/standalone/server.js
 
 ### 原因说明
 
-1. **`sub_block` 与 collection 不一致**：`metadata` 尚未返回时，搜索类型下拉的选项列表 `typeOptions` 为空，但若此时仍将 `selectedKeys` 设为 `['sub_block']`，HeroUI `Select` 中没有任何 `SelectItem` 却携带选中键，即会触发该警告。
-2. **`aria-label`**：搜索框旁的下拉使用了空字符串 `label=""`，等同于无可见标签，HeroUI 会要求提供 `aria-label` 或 `aria-labelledby`。
+1. **`sub_block` 与 collection 不一致**（常见触发场景）：
+   - `metadata` 尚未返回时，`typeOptions` 为空，若 `selectedKeys` 仍为 `['sub_block']`，会报警。
+   - **`metadata` 被清空或接口失败**（例如构建预渲染、SWR 重试间隙）时，`typeOptions` 变为空数组，但本地 state 仍保留上一轮的 `['sub_block']`，同样会报警。
+   - **合约验证页**：编译器 / Resolc 版本列表来自接口，首屏或构建阶段 `compilerOptions`、`resolcOptions` 可能为空，而 `selectedKeys` 仍使用写死的默认版本字符串，也会触发同类「keys not in collection」警告。
+2. **`aria-label`**：`Select` / `Input` 使用 `label=""` 且无可见标签时，HeroUI 会要求提供 `aria-label` 或 `aria-labelledby`。
 
-### 项目内已做修改（导航栏搜索）
+### 项目内已做修改
 
-在 `src/components/navbar/navbar.tsx` 中已调整：
+**`src/components/navbar/navbar.tsx`（导航栏搜索）**
 
-- 搜索类型 `type` 初始为空数组；在 `typeOptions` 有数据后，用 `useEffect` 校验当前选中值是否在选项内，不在则设为「仅 EVM 时的 `pvm_block`」或「当前列表第一项」；并在选项未加载时对 `Select` 使用 `isDisabled`。
-- 去掉空 `label`，为 `Select` 设置 `aria-label="Search category"`。
+- 使用 **`selectSelectedKeys`（`useMemo`）**：只要 `typeOptions` 为空则传空数组；有数据时保证传入的键一定落在当前 `SelectItem` 集合内（避免 state 滞后一帧）。
+- 搜索跳转使用 **`effectiveSearchType`**（与 `selectSelectedKeys` 一致），避免 `type` 尚未同步时选错类型。
+- `useEffect`：选项为空时若 `type` 仍有残留则 **`setType([])`**；选项恢复后再按仅 EVM / 首项规则对齐。
+- `Select` 使用 `aria-label="Search category"`，选项未加载时 `isDisabled`。
 
-升级或合并代码后若仍出现同类提示，可检查其他页面是否仍有 `label=""` 且无 `aria-label` 的 `Select`/`Input`（例如 `src/components/contract/verify.tsx`），按同样原则补全无障碍属性即可。
+**`src/components/contract/verify.tsx`（合约验证）**
+
+- 编译器、Resolc 下拉使用 **`compilerSelectedKeys` / `resolcSelectedKeys`** 与接口返回的选项对齐，并在 `useEffect` 中修正无效 state；列表未加载时 `isDisabled`。
+- 各 `Select` / 无单独标题的 `Input` 增加 **`aria-label`**，去掉无意义的空 `label`。
+- 提交前若版本列表仍未就绪则提示用户等待，避免使用未对齐的 state。
+
+若升级依赖后仍出现类似日志，可在仓库内搜索 `label=""` 的 HeroUI 组件并改为可见 `label` 或 `aria-label`。
 
 ## 10) MySQL / Redis 不希望暴露外网
 
