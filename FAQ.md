@@ -77,7 +77,7 @@
 
 8. **仅前端相关补充**
 
-   - 若后端返回的 `networkNode` 在仓库中尚无 `public/images/network/<networkNode>/`，需按 `README.md` 补 logo/banner，或临时用符号链接复用已有网络目录，见后文第 **8** 条。
+   - 若后端返回的 `networkNode` 在仓库中尚无 `public/images/network/<networkNode>/`，需按 `README.md` 补 logo/banner，或临时用符号链接复用已有网络目录，见后文第 **8** 条；**替换顶栏左上角/右上角 Logo** 见第 **8** 条内「替换导航栏 Logo」小节。
    - 使用 **standalone** 时，进程读取的是 **`.next/standalone/public/`**，不是仓库根的 `public/`。排查「图在仓库里但页面/curl 仍 404」时，**必须同时检查** `.next/standalone/public/...` 是否存在（见 **A.3**、第 **8** 条）。
    - 若从其他环境**只拷贝** `.next/standalone` 目录到新机器，须同时保证其中包含 **`public`** 与 **`.next/static`**，或在新机器上重新 `npm run build`。
 
@@ -449,6 +449,24 @@ ln -snf bifrost-testnet bifrost-kusama
 ```
 
 3. **前端容错**：顶栏 `Image` 在加载失败时会回退到 `public/images/network/default/logo.png`，避免页面长期报错；横幅仍依赖存在文件或上述目录/链接，否则仅背景可能缺失。
+
+### 替换导航栏 Logo（左上角主标 vs 右上角网络角标）
+
+顶栏存在**两套**图片，路径与改法不同（实现见 `src/components/navbar/navbar.tsx`）：
+
+| 位置 | 浏览器路径 | 仓库中对应文件 | 说明 |
+|------|------------|----------------|------|
+| **左上角**「SUBSCAN」长条主标 | `/images/logo.png` | `public/images/logo.png` | 代码中写死为该路径；要换图可直接**覆盖该文件**，或改组件里的 `src`。 |
+| **右上角**白底内的网络角标 | `/images/network/<networkNode>/logo.png` | `public/images/network/<networkNode>/logo.png` | **`<networkNode>` 来自接口 `metadata.networkNode`**（与后端配置一致），不是写死某一链名。 |
+
+**要换成某链的角标（例如 `bifrost-kusama`）：**
+
+1. 确认 `metadata` 里 **`networkNode` 的实际取值**（与目录名一致，区分大小写）。
+2. 将角标图片保存为 **`public/images/network/<networkNode>/logo.png`**（例如 `public/images/network/bifrost-kusama/logo.png`）。
+3. 若该链目录为 **符号链接**（如 `bifrost-kusama` → `bifrost-testnet`），浏览器请求会解析到**目标目录**下的 `logo.png`，需改**目标目录**中的文件或调整链接。
+4. **standalone** 部署：替换资源后执行 **`npm run build`**（或至少将更新后的 `public` 同步到 `.next/standalone/public/`，见 **A.3**），并重启前端进程。
+
+**要换左上角主标：** 替换 **`public/images/logo.png`** 即可（全站共用）；若希望主标也走网络目录路径，需自行修改 `navbar.tsx` 中 `NavbarBrand` 内 `Image` 的 `src`。
 
 ### 处理建议（standalone）
 

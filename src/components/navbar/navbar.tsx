@@ -61,13 +61,7 @@ const Component: React.FC<Props> = ({ children, className }) => {
   /** 与 typeOptions 同步初始化，避免 metadata 未就绪时 selectedKeys 不在 collection 内 */
   const [type, setType] = useState<string[]>([])
   const networkNode = metadata?.networkNode || 'default'
-  /** 角标：优先可选的 logo-mini.svg，失败再回退 logo.png → default */
-  const [cornerLogoTier, setCornerLogoTier] = useState<'svg' | 'png' | 'default'>('svg')
-  const cornerLogoSrc = useMemo(() => {
-    if (cornerLogoTier === 'svg') return `/images/network/${networkNode}/logo-mini.svg`
-    if (cornerLogoTier === 'png') return `/images/network/${networkNode}/logo.png`
-    return '/images/network/default/logo.png'
-  }, [networkNode, cornerLogoTier])
+  const [logoSrc, setLogoSrc] = useState(`/images/network/${networkNode}/logo.png`)
   const router = useRouter()
 
   const showSubstrate = metadata?.enable_substrate
@@ -183,7 +177,7 @@ const Component: React.FC<Props> = ({ children, className }) => {
     }
   }
   useEffect(() => {
-    setCornerLogoTier('svg')
+    setLogoSrc(`/images/network/${networkNode}/logo.png`)
   }, [networkNode])
 
   useEffect(() => {
@@ -407,16 +401,13 @@ const Component: React.FC<Props> = ({ children, className }) => {
           <NavbarItem>
             <div className='bg-white rounded-lg px-2.5 py-0.5'>
               <Image
-                width={30}
-                height={30}
+                width={0}
+                height={0}
                 sizes="100vw"
                 className="hidden md:block h-[30px] w-auto"
-                src={cornerLogoSrc}
+                src={logoSrc}
                 alt={metadata?.networkNode || 'Network Name'}
-                unoptimized={cornerLogoTier === 'svg'}
-                onError={() =>
-                  setCornerLogoTier((t) => (t === 'svg' ? 'png' : t === 'png' ? 'default' : t))
-                }
+                onError={() => setLogoSrc('/images/network/default/logo.png')}
               />
             </div>
           </NavbarItem>
