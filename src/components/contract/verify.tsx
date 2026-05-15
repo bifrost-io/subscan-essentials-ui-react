@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useState, useEffect } from 'react'
 
 import { BareProps } from '@/types/page'
 import {
@@ -89,6 +89,37 @@ const Component: React.FC<Props> = ({ children, className, address }) => {
     })
     return options
   }, [resolcData])
+
+  const compilerSelectedKeys = useMemo(() => {
+    if (!compilerOptions.length) return [] as string[]
+    const k = compiler[0]
+    if (k && compilerOptions.some((o) => o.value === k)) return [k]
+    return [compilerOptions[0].value]
+  }, [compilerOptions, compiler])
+
+  const resolcSelectedKeys = useMemo(() => {
+    if (!resolcOptions.length) return [] as string[]
+    const k = resolc[0]
+    if (k && resolcOptions.some((o) => o.value === k)) return [k]
+    return [resolcOptions[0].value]
+  }, [resolcOptions, resolc])
+
+  useEffect(() => {
+    if (!compilerOptions.length) return
+    const k = compiler[0]
+    if (!k || !compilerOptions.some((o) => o.value === k)) {
+      setCompiler([compilerOptions[0].value])
+    }
+  }, [compilerOptions, compiler])
+
+  useEffect(() => {
+    if (!resolcOptions.length) return
+    const k = resolc[0]
+    if (!k || !resolcOptions.some((o) => o.value === k)) {
+      setResolc([resolcOptions[0].value])
+    }
+  }, [resolcOptions, resolc])
+
   const reset = () => {
     window.location.reload()
   }
@@ -115,6 +146,16 @@ const Component: React.FC<Props> = ({ children, className, address }) => {
         return
       }
     }
+    const compilerVersion = compilerSelectedKeys[0]
+    const resolcVersion = resolcSelectedKeys[0]
+    if (!compilerVersion || !resolcVersion) {
+      addToast({
+        title: 'Warning',
+        description: 'Compiler or Resolc version list is still loading. Please wait and try again.',
+        color: 'warning',
+      })
+      return
+    }
     let formData
     if (compilerType === 'json') {
       const file = files?.[0]?.file
@@ -129,17 +170,17 @@ const Component: React.FC<Props> = ({ children, className, address }) => {
           formData.append('contractname', name)
         }
         formData.append('contractaddress', address)
-        formData.append('compilerversion', compiler[0])
-        formData.append('resolcVersion', resolc[0])
+        formData.append('compilerversion', compilerVersion)
+        formData.append('resolcVersion', resolcVersion)
       } catch (e) {}
     } else {
       let data: any = {
         contractaddress: address,
         codeformat: 'solidity-single-file',
-        compilerversion: compiler[0],
+        compilerversion: compilerVersion,
         optimizationUsed: optimization === 'true' ? 1 : 0,
         sourceCode: code,
-        resolcVersion: resolc[0],
+        resolcVersion: resolcVersion,
       }
       if (optimization === 'true') {
         data['runs'] = optimizationRuns
@@ -210,7 +251,14 @@ const Component: React.FC<Props> = ({ children, className, address }) => {
       </div>
       <div>
         <div className="mb-2">Contract Name</div>
-        <Input value={name} onValueChange={setName} label="" name="contract_name" placeholder="Optional" type="text" />
+        <Input
+          value={name}
+          onValueChange={setName}
+          aria-label="Contract name"
+          name="contract_name"
+          placeholder="Optional"
+          type="text"
+        />
       </div>
       <div>
         <RadioGroup
@@ -230,7 +278,7 @@ const Component: React.FC<Props> = ({ children, className, address }) => {
           <div className="mb-2">Smart Contract Version</div>
           <Select
             className="max-w-xs"
-            label=""
+            aria-label="Smart contract EVM version"
             selectedKeys={evmVersion}
             onSelectionChange={(key) => {
               if (key.currentKey) {
@@ -247,8 +295,9 @@ const Component: React.FC<Props> = ({ children, className, address }) => {
         <div className="mb-2">Compiler Version</div>
         <Select
           className="max-w-xs"
-          label=""
-          selectedKeys={compiler}
+          aria-label="Solidity compiler version"
+          selectedKeys={compilerSelectedKeys}
+          isDisabled={!compilerOptions.length}
           onSelectionChange={(key) => {
             if (key.currentKey) {
               setCompiler([key.currentKey])
@@ -263,8 +312,9 @@ const Component: React.FC<Props> = ({ children, className, address }) => {
         <div className="mb-2">Resolc Version</div>
         <Select
           className="max-w-xs"
-          label=""
-          selectedKeys={resolc}
+          aria-label="Resolc version"
+          selectedKeys={resolcSelectedKeys}
+          isDisabled={!resolcOptions.length}
           onSelectionChange={(key) => {
             if (key.currentKey) {
               setResolc([key.currentKey])
@@ -293,7 +343,14 @@ const Component: React.FC<Props> = ({ children, className, address }) => {
           {optimization === 'true' ? (
             <div>
               <div className="mb-2">Optimization runs</div>
-              <Input value={optimizationRuns} onValueChange={setOptimizationRuns} label="" name="optimization_runs" placeholder="" type="text" />
+              <Input
+                value={optimizationRuns}
+                onValueChange={setOptimizationRuns}
+                aria-label="Optimization runs"
+                name="optimization_runs"
+                placeholder=""
+                type="text"
+              />
             </div>
           ) : null}
         </>
@@ -321,8 +378,8 @@ const Component: React.FC<Props> = ({ children, className, address }) => {
           <Input
             value={target}
             onValueChange={setTarget}
-            label=""
-            name="contract_name"
+            aria-label="Compilation target"
+            name="compilation_target"
             placeholder='Optional: File and name of the contract or library this metadata is created for, such as "myFile.sol"'
             type="text"
           />

@@ -3,9 +3,8 @@
   "version": "0.1.0",
   "scripts": {
     "dev": "NEXT_PUBLIC_API_HOST='https://assethub-westend-lite.webapi.subscan.io' next dev",
-    "build": "next build",
+    "build": "next build && npm run copy-standalone-assets",
     "copy-standalone-assets": "cp -r public .next/standalone/ && mkdir -p .next/standalone/.next && cp -r .next/static .next/standalone/.next/",
-    "postbuild": "npm run copy-standalone-assets",
     "analyze-build": "ANALYZE=true npm run build",
     "start": "next start",
     "lint": "next lint",

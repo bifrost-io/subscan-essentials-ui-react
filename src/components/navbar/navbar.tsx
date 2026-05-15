@@ -128,6 +128,16 @@ const Component: React.FC<Props> = ({ children, className }) => {
     return options
   }, [metadata?.enable_substrate, metadata?.enable_evm])
 
+  /** 与 typeOptions 同一渲染周期内保证 selectedKeys 始终在 collection 内（避免 metadata 清空后仍保留 sub_block） */
+  const selectSelectedKeys = useMemo(() => {
+    if (!typeOptions.length) return [] as string[]
+    const k = type[0]
+    if (k && typeOptions.some((o) => o.value === k)) return [k]
+    return [typeOptions[0].value]
+  }, [typeOptions, type])
+
+  const effectiveSearchType = selectSelectedKeys[0]
+
   const handleSearch = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       handleRedirect()
@@ -135,7 +145,7 @@ const Component: React.FC<Props> = ({ children, className }) => {
   }
   const handleRedirect = () => {
     if (value.trim()) {
-      switch (type[0]) {
+      switch (effectiveSearchType) {
         case 'sub_block':
           router.push(`/sub/block/${value.trim()}`)
           break
@@ -171,7 +181,10 @@ const Component: React.FC<Props> = ({ children, className }) => {
   }, [networkNode])
 
   useEffect(() => {
-    if (!typeOptions.length) return
+    if (!typeOptions.length) {
+      if (type.length) setType([])
+      return
+    }
     const current = type[0]
     const inCollection = typeOptions.some((o) => o.value === current)
     if (inCollection) return
@@ -426,7 +439,7 @@ const Component: React.FC<Props> = ({ children, className }) => {
                     selectorIcon: 'right-[0px]',
                   }}
                   aria-label="Search category"
-                  selectedKeys={type}
+                  selectedKeys={selectSelectedKeys}
                   isDisabled={!typeOptions.length}
                   onSelectionChange={(key) => {
                     if (key.currentKey) {
